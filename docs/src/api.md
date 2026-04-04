@@ -7,9 +7,19 @@ computeTidalEigenvalues
 computeTidalEigenvalues!
 ```
 
+## Shear Tensor
+
+```@docs
+computeShearEigenvalues
+computeShearEigenvalues!
+```
+
 ## Pipelines
 
 ```@docs
 NEXUSTidal
 NEXUSDiv
+NEXUSShear
+NeoNEXUS.run
+runMultithreaded
 ```

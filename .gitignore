@@ -1,8 +1,0 @@
-# IDE and editor files
-.vscode/
-
-# Julia environment (let users generate their own)
-Manifest.toml
-
-# Documenter.jl build output
-docs/build/

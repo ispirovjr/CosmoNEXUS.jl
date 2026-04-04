@@ -1,8 +1,8 @@
 # Tidal tensor computation via Fourier-space Poisson inversion
 # T_ij(k) = -(k_i k_j / k²) ρ̂(k)
 
-# Local helper: extract k-vector component based on dimension (1=x, 2=y, 3=z)
-@inline _selectK(kVec, i, j, k, dim) = dim == 1 ? kVec[i] : (dim == 2 ? kVec[j] : kVec[k])
+# Extract a wave-number component based on dimension (1 = x, 2 = y, 3 = z).
+@inline selectK(kVec, i, j, k, dim) = dim == 1 ? kVec[i] : (dim == 2 ? kVec[j] : kVec[k])
 
 
 # Compute one tidal tensor component in Fourier space: T_ij → -(kα·kβ / k²)·f̂(k).
@@ -12,8 +12,8 @@
     Nx, Ny, Nz = size(fftField)
 
     @inbounds for k in 1:Nz, j in 1:Ny, i in 1:Nx
-        kαVal = _selectK(kα, i, j, k, dimα)
-        kβVal = _selectK(kβ, i, j, k, dimβ)
+        kαVal = selectK(kα, i, j, k, dimα)
+        kβVal = selectK(kβ, i, j, k, dimβ)
         k² = kx[i]^2 + ky[j]^2 + kz[k]^2
         invK² = k² > 0.0 ? 1.0 / k² : 0.0
         tmp[i, j, k] = fftField[i, j, k] * (-kαVal * kβVal * invK²)
@@ -23,11 +23,11 @@
 end
 
 
-# Compute all 6 unique tidal tensor components from the FFT of a scalar field.
+# Compute all six unique tidal tensor components from the FFT of a scalar field.
 function computeTidalHessianComponents!(
     fftField, tmp,
     kx, ky, kz,
-    kx_odd, ky_odd, kz_odd,
+    kxOdd, kyOdd, kzOdd,
     Hxx::AbstractArray{<:Real,3}, Hyy::AbstractArray{<:Real,3}, Hzz::AbstractArray{<:Real,3},
     Hxy::AbstractArray{<:Real,3}, Hxz::AbstractArray{<:Real,3}, Hyz::AbstractArray{<:Real,3},
     Nx::Int
@@ -40,13 +40,13 @@ function computeTidalHessianComponents!(
     tidalHessianComp!(tmp, fftField, kz, kz, 3, 3, kx, ky, kz)
     Hzz .= FFTW.irfft(tmp, Nx)
 
-    # Off-diagonal components (tidal T_xy, T_xz, T_yz)
-    # MUST use odd k-vectors to preserve Hermitian symmetry across Nyquist
-    tidalHessianComp!(tmp, fftField, kx_odd, ky_odd, 1, 2, kx, ky, kz)
+    # Off-diagonal components must use odd wavevectors to preserve Hermitian
+    # symmetry across the Nyquist frequencies.
+    tidalHessianComp!(tmp, fftField, kxOdd, kyOdd, 1, 2, kx, ky, kz)
     Hxy .= FFTW.irfft(tmp, Nx)
-    tidalHessianComp!(tmp, fftField, kx_odd, kz_odd, 1, 3, kx, ky, kz)
+    tidalHessianComp!(tmp, fftField, kxOdd, kzOdd, 1, 3, kx, ky, kz)
     Hxz .= FFTW.irfft(tmp, Nx)
-    tidalHessianComp!(tmp, fftField, ky_odd, kz_odd, 2, 3, kx, ky, kz)
+    tidalHessianComp!(tmp, fftField, kyOdd, kzOdd, 2, 3, kx, ky, kz)
     Hyz .= FFTW.irfft(tmp, Nx)
 
     return nothing
@@ -63,11 +63,16 @@ function computeTidalEigenvalues(
     field::AbstractArray{<:Real,3},
     kx, ky, kz
 )::HessianEigenCache
-
     Nx, Ny, Nz = size(field)
     cache = HessianEigenCache(Nx, Ny, Nz)
 
-    computeTidalEigenvalues!(field, collect(Float64, kx), collect(Float64, ky), collect(Float64, kz), cache)
+    computeTidalEigenvalues!(
+        field,
+        collect(Float64, kx),
+        collect(Float64, ky),
+        collect(Float64, kz),
+        cache
+    )
 
     return cache
 end
@@ -83,7 +88,7 @@ function computeTidalEigenvalues!(
     kx::Vector{Float64}, ky::Vector{Float64}, kz::Vector{Float64},
     cache::HessianEigenCache
 )
-    # Use real-to-Complex FFT for halving memory and compute
+    # Use a real-to-complex FFT to reduce the temporary footprint.
     fftField = FFTW.rfft(field)
     Nx = size(field, 1)
     tmp = similar(fftField)
@@ -95,19 +100,40 @@ function computeTidalEigenvalues!(
     Hxz = similar(cache.λ1)
     Hyz = similar(cache.λ1)
 
-    # Allocate zeroed-Nyquist wavevectors to preserve Hermitian symmetry in cross-derivatives
+    # Zero Nyquist modes for cross-derivatives so the inverse FFT stays real.
     Ny, Nz = size(field, 2), size(field, 3)
-    kx_odd = copy(kx)
-    kx_odd[end] = 0.0  # rfftfreq ends at Nyquist
-    ky_odd = copy(ky)
-    ky_odd[Ny÷2+1] = 0.0  # fftfreq has Nyquist at N/2 + 1
-    kz_odd = copy(kz)
-    kz_odd[Nz÷2+1] = 0.0
+    kxOdd = copy(kx)
+    kyOdd = copy(ky)
+    kzOdd = copy(kz)
 
-    # Compute all 6 tidal tensor components in Real Space
-    computeTidalHessianComponents!(fftField, tmp, kx, ky, kz, kx_odd, ky_odd, kz_odd, Hxx, Hyy, Hzz, Hxy, Hxz, Hyz, Nx)
+    if iseven(Nx)
+        kxOdd[end] = 0.0
+    end
+    if iseven(Ny)
+        kyOdd[div(Ny, 2)+1] = 0.0
+    end
+    if iseven(Nz)
+        kzOdd[div(Nz, 2)+1] = 0.0
+    end
 
-    # Compute eigenvalues (λ1, λ2, λ3) for every voxel directly into cache
+    computeTidalHessianComponents!(
+        fftField,
+        tmp,
+        kx,
+        ky,
+        kz,
+        kxOdd,
+        kyOdd,
+        kzOdd,
+        Hxx,
+        Hyy,
+        Hzz,
+        Hxy,
+        Hxz,
+        Hyz,
+        Nx
+    )
+
     NeoNEXUS.computeEigenvalues!(Hxx, Hyy, Hzz, Hxy, Hxz, Hyz, cache)
 
     return cache

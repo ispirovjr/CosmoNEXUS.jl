@@ -1,6 +1,8 @@
 # CosmoNEXUS.jl
 
-**CosmoNEXUS** is a cosmology-specific extension package for [NeoNEXUS.jl](https://github.com/ispirovjr/NeoNEXUS.jl). It provides tidal tensor and velocity divergence classification pipelines for cosmic web analysis.
+**CosmoNEXUS** extends **NeoNEXUS** with cosmology-specific pipelines for tidal
+tensors, velocity divergence, and velocity shear while keeping the same
+multi-scale morphology workflow.
 
 ## Installation
 
@@ -9,27 +11,38 @@ using Pkg
 Pkg.add("CosmoNEXUS")
 ```
 
-## Overview
-
-CosmoNEXUS extends the NeoNEXUS morphological analysis framework with two cosmological pipelines:
-
-- **[`NEXUSTidal`](@ref)**: Classifies structures using the tidal field tensor (Hessian of gravitational potential) via Fourier-space Poisson inversion.
-- **[`NEXUSDiv`](@ref)**: Classifies structures using the velocity divergence field `θ = ∇·v/H`.
-
-Both pipelines follow the same signature computation and hierarchical thresholding approach as NEXUS+, but operate on different physical fields.
-
 ## Quick Start
 
 ```julia
-using NeoNEXUS, CosmoNEXUS
+using CosmoNEXUS
 
 N = 64
-scales = [1.0, 2.0, 4.0]
+scales = [3.0, 6.0, 9.0]
 
+density = abs.(randn(Float32, N, N, N)) .+ 1f0
 runner = NEXUSTidal(N, scales)
-density = abs.(randn(Float32, N, N, N))
+thresholds = runner(density)
 
-thresholds = run(runner, density)
+println(thresholds)
+println(sum(runner.wall.thresholdMap))
 ```
 
-See [NeoNEXUS.jl documentation](https://ispirovjr.github.io/NeoNEXUS.jl) for the core API.
+## What the Package Provides
+
+- **Tidal tensor tools**: [`computeTidalEigenvalues`](@ref) and [`computeTidalEigenvalues!`](@ref) evaluate the tidal-tensor eigenvalues of a scalar field.
+- **Shear tensor tools**: [`computeShearEigenvalues`](@ref) and [`computeShearEigenvalues!`](@ref) evaluate the eigenvalues of a symmetric velocity-shear tensor field.
+- **Runners**: [`NEXUSTidal`](@ref), [`NEXUSDiv`](@ref), and [`NEXUSShear`](@ref) reuse the `NeoNEXUS` feature, filter, and thresholding stack for cosmological observables.
+
+## Usage Notes
+
+- `NEXUSTidal(gridSize, scales)`, `NEXUSDiv(gridSize, scales)`, and `NEXUSShear(gridSize, scales)` are convenience constructors for cubic grids.
+- `NEXUSTidal` normalizes the input density field to mean density 1 internally, matching `NEXUSPlus`.
+- `NEXUSDiv` expects `thetaField = div(v) / H`.
+- `NEXUSShear` accepts either a full `(Nx, Ny, Nz, 3, 3)` velocity-shear tensor or a traceless shear field together with `thetaField`.
+- The bundled `exampleShear64.jld2` demo field is traceless, so it should be paired with `exampleDivergence64.jld2` and passed through the two-field `NEXUSShear` overload.
+- Feature objects and runners are stateful: their `significanceMap` and `thresholdMap` arrays live on the structs and are reused across calls.
+
+## Next Steps
+
+- See [API Reference](api.md) for the exported types and functions.
+- See the repository demos for end-to-end examples using the bundled density, divergence, and shear cubes.

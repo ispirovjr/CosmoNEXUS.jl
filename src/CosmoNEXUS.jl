@@ -3,19 +3,19 @@
 
 Cosmology-specific extensions for [`NeoNEXUS`](@ref).
 
-Provides tidal tensor classification ([`NEXUSTidal`](@ref)) and velocity
-divergence classification ([`NEXUSDiv`](@ref)) pipelines for cosmic web analysis.
+Provides tidal-tensor ([`NEXUSTidal`](@ref)), velocity-divergence
+([`NEXUSDiv`](@ref)), and velocity-shear ([`NEXUSShear`](@ref)) pipelines
+while reusing the feature, filter, and thresholding machinery from
+`NeoNEXUS`.
 """
 module CosmoNEXUS
 
-using NeoNEXUS
 using FFTW
+using NeoNEXUS
 using Statistics
 
-# Import functions we extend with new methods
 import NeoNEXUS: run, runMultithreaded
 
-# Re-import types used in our signatures (for user convenience)
 using NeoNEXUS:
     AbstractScaleFilter,
     AbstractMorphologicalFeature,
@@ -31,16 +31,20 @@ using NeoNEXUS:
     deltaMSquaredThreshold!
 
 include("Tidal.jl")
-include("Runners.jl")
+include("Shear.jl")
+include("Runner.jl")
 
 export
     # tidal
     computeTidalEigenvalues,
     computeTidalEigenvalues!,
+    computeShearEigenvalues,
+    computeShearEigenvalues!,
 
     # runners
     NEXUSTidal,
     NEXUSDiv,
+    NEXUSShear,
     run,
     runMultithreaded
 

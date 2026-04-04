@@ -1,95 +1,122 @@
-"""
-Visual comparison of NEXUS_tidal vs NEXUS_shear on the example field.
+#!/usr/bin/env julia
+#=
+CosmoNEXUS shear comparison demo.
 
-Generates a 2×2 heatmap:
-- Top-left:  NEXUS_tidal wall signature
-- Top-right: NEXUS_shear wall signature
-- Bottom-left:  NEXUS_tidal threshold map (wall+filament+node)
-- Bottom-right: NEXUS_shear threshold map (wall+filament+node)
-"""
+Compares `NEXUSTidal` on the bundled density cube with `NEXUSShear` on the
+paired traceless shear and velocity-divergence fields. The bundled
+`exampleShear64.jld2` field is traceless, so the demo reconstructs the full
+velocity-shear tensor internally by passing the separate `thetaField`.
+=#
 
-using NeoNEXUS
+using Pkg
+Pkg.activate(@__DIR__)
+pushfirst!(LOAD_PATH, normpath(joinpath(@__DIR__, "..", "..")))
+
 using CosmoNEXUS
 using JLD2
+using NeoNEXUS
 using Plots
-using Statistics
 
-# ─── Load Example Data ────────────────────────────────────
-dataDir = joinpath(@__DIR__)
+densityPath = joinpath(@__DIR__, "exampleDensity64.jld2")
+shearPath = joinpath(@__DIR__, "exampleShear64.jld2")
+divergencePath = joinpath(@__DIR__, "exampleDivergence64.jld2")
 
-println("Loading density...")
-density = Float32.(load(joinpath(dataDir, "exampleDensity64.jld2"))["dens"])
+density = Float32.(load(densityPath)["dens"])
+tracelessShearRaw = load(shearPath)["shears"]
+thetaField = Float32.(load(divergencePath)["divs"])
 
-N = size(density, 1)
-println("Loaded density field: $(size(density))")
-
-println("Loading shear...")
-shear = load(joinpath(dataDir, "exampleShear64.jld2"))["shears"]
-
+gridSize = size(density, 1)
+tracelessShear = Float32[
+    tracelessShearRaw[i, j, k][u, v]
+    for i in 1:gridSize, j in 1:gridSize, k in 1:gridSize, u in 1:3, v in 1:3
+]
 
 scales = [3.0, 6.0, 9.0]
 
-# ─── Run NEXUS_tidal ─────────────────────────────────────────
-println("\n=== Running NEXUS_tidal ===")
-nexusTidal = NEXUSTidal(N, scales)
-t1 = @elapsed thresTidal = nexusTidal(density)
-println("  Time: $(round(t1, digits=2))s")
-println("  Node threshold:     $(thresTidal.nodeThres)")
-println("  Filament threshold: $(thresTidal.filamentThres)")
-println("  Wall threshold:     $(thresTidal.wallThres)")
+println("Running NEXUS_tidal...")
+nexusTidal = NEXUSTidal(gridSize, scales)
+timeTidal = @elapsed thresholdsTidal = nexusTidal(density)
 
-# ─── Run NEXUS_shear ─────────────────────────────────────────
-println("\n=== Running NEXUS_shear ===")
-nexusShear = NEXUSShear(N, scales)
-t2 = @elapsed thresShear = nexusShear(density)
-println("  Time: $(round(t2, digits=2))s")
-println("  Node threshold:     $(thresShear.nodeThres)")
-println("  Filament threshold: $(thresShear.filamentThres)")
-println("  Wall threshold:     $(thresShear.wallThres)")
+println("Running NEXUS_shear with traceless shear + theta...")
+nexusShear = NEXUSShear(gridSize, scales)
+timeShear = @elapsed thresholdsShear = nexusShear(tracelessShear, thetaField)
 
-# ─── Extract mid-z slice ──────────────────────────────────────
-midZ = N ÷ 2
+println("NEXUS_tidal thresholds: ", thresholdsTidal)
+println("NEXUS_shear thresholds: ", thresholdsShear)
+println("Timing: NEXUS_tidal = $(round(timeTidal, digits=2)) s, NEXUS_shear = $(round(timeShear, digits=2)) s")
 
-wallSigTidal = nexusTidal.wall.significanceMap[:, :, midZ]
-wallSigShear = nexusShear.wall.significanceMap[:, :, midZ]
+sliceIndex = div(gridSize, 2)
+wallSigTidal = nexusTidal.wall.significanceMap[:, :, sliceIndex]
+wallSigShear = nexusShear.wall.significanceMap[:, :, sliceIndex]
 
-# ─── Plot 2×2 ─────────────────────────────────────────────────
-gr(size=(1200, 1000))
-
-# Use log scale for wall signatures (avoid log(0))
 logSigTidal = log10.(max.(wallSigTidal, 1f-10))
 logSigShear = log10.(max.(wallSigShear, 1f-10))
 
-# Shared color range for signatures
-sigMin = min(minimum(logSigTidal[logSigTidal.>-10]), minimum(logSigShear[logSigShear.>-10]))
+sigMin = min(
+    minimum(logSigTidal[logSigTidal .> -10]),
+    minimum(logSigShear[logSigShear .> -10]),
+)
 sigMax = max(maximum(logSigTidal), maximum(logSigShear))
 
-p1 = heatmap(logSigTidal', title="NEXUS_tidal Wall Signature",
-    clims=(sigMin, sigMax), color=:inferno, aspect_ratio=1,
-    xlabel="x", ylabel="y", colorbar_title="log₁₀(S)")
+gr(size=(1200, 1000))
 
-p2 = heatmap(logSigShear', title="NEXUS_shear Wall Signature",
-    clims=(sigMin, sigMax), color=:inferno, aspect_ratio=1,
-    xlabel="x", ylabel="y", colorbar_title="log₁₀(S)")
+p1 = heatmap(
+    logSigTidal';
+    title="NEXUS_tidal Wall Signature",
+    clims=(sigMin, sigMax),
+    color=:inferno,
+    aspect_ratio=1,
+    xlabel="x",
+    ylabel="y",
+    colorbar_title="log10(S)",
+)
 
-p3 = contour(nexusTidal.wall.thresholdMap[:, :, midZ]', title="NEXUS_tidal Threshold (Node/Fil/Wall)", aspect_ratio=1,
-    xlabel="x", ylabel="y", levels=[0.5], color=:blue)
-contour!(nexusTidal.filament.thresholdMap[:, :, midZ]', title="NEXUS_tidal Threshold (Node/Fil/Wall)", aspect_ratio=1,
-    xlabel="x", ylabel="y", levels=[0.5], color=:green)
-contour!(nexusTidal.node.thresholdMap[:, :, midZ]', title="NEXUS_tidal Threshold (Node/Fil/Wall)", aspect_ratio=1,
-    xlabel="x", ylabel="y", levels=[0.5], color=:red)
+p2 = heatmap(
+    logSigShear';
+    title="NEXUS_shear Wall Signature",
+    clims=(sigMin, sigMax),
+    color=:inferno,
+    aspect_ratio=1,
+    xlabel="x",
+    ylabel="y",
+    colorbar_title="log10(S)",
+)
 
-p4 = contour(nexusShear.wall.thresholdMap[:, :, midZ]', title="NEXUS_shear Threshold (Node/Fil/Wall)", aspect_ratio=1,
-    xlabel="x", ylabel="y", levels=[0.5], color=:blue)
-contour!(nexusShear.filament.thresholdMap[:, :, midZ]', title="NEXUS_shear Threshold (Node/Fil/Wall)", aspect_ratio=1,
-    xlabel="x", ylabel="y", levels=[0.5], color=:green)
-contour!(nexusShear.node.thresholdMap[:, :, midZ]', title="NEXUS_shear Threshold (Node/Fil/Wall)", aspect_ratio=1,
-    xlabel="x", ylabel="y", levels=[0.5], color=:red)
+p3 = contour(
+    nexusTidal.wall.thresholdMap[:, :, sliceIndex]';
+    title="NEXUS_tidal Thresholds",
+    aspect_ratio=1,
+    xlabel="x",
+    ylabel="y",
+    levels=[0.5],
+    color=:blue,
+)
+contour!(nexusTidal.filament.thresholdMap[:, :, sliceIndex]'; levels=[0.5], color=:green)
+contour!(nexusTidal.node.thresholdMap[:, :, sliceIndex]'; levels=[0.5], color=:red)
 
-fig = plot(p1, p2, p3, p4, layout=(2, 2),
-    plot_title="NEXUS_tidal vs NEXUS_shear Comparison (z=$(midZ))",
-    margin=5Plots.mm, dpi=200)
+p4 = contour(
+    nexusShear.wall.thresholdMap[:, :, sliceIndex]';
+    title="NEXUS_shear Thresholds",
+    aspect_ratio=1,
+    xlabel="x",
+    ylabel="y",
+    levels=[0.5],
+    color=:blue,
+)
+contour!(nexusShear.filament.thresholdMap[:, :, sliceIndex]'; levels=[0.5], color=:green)
+contour!(nexusShear.node.thresholdMap[:, :, sliceIndex]'; levels=[0.5], color=:red)
 
-outPath = joinpath(@__DIR__, "nexusTidalVsShear.png")
-savefig(fig, outPath)
-println("\nSaved comparison plot to: $(outPath)")
+figure = plot(
+    p1,
+    p2,
+    p3,
+    p4;
+    layout=(2, 2),
+    plot_title="NEXUS_tidal vs NEXUS_shear Comparison (z=$sliceIndex)",
+    margin=5Plots.mm,
+    dpi=200,
+)
+
+outputPath = joinpath(@__DIR__, "nexusTidalVsShear.png")
+savefig(figure, outputPath)
+println("Saved comparison plot to: $outputPath")
