@@ -1,6 +1,6 @@
 # CosmoNEXUS.jl
 
-**CosmoNEXUS** extends **NeoNEXUS** with cosmology-specific pipelines for tidal
+**CosmoNEXUS** extends [**NeoNEXUS**](https://ispirovjr.github.io/NeoNEXUS.jl/) with cosmology-specific pipelines for tidal
 tensors, velocity divergence, and velocity shear while keeping the same
 multi-scale morphology workflow.
 
