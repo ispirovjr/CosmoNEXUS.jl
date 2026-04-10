@@ -57,7 +57,7 @@ end
     computeTidalEigenvalues(field, kx, ky, kz) -> HessianEigenCache
 
 Compute tidal tensor eigenvalues of a scalar field via Fourier-space Poisson
-inversion. Allocates and returns a new [`HessianEigenCache`](@ref).
+inversion. Allocates and returns a new `HessianEigenCache`.
 """
 function computeTidalEigenvalues(
     field::AbstractArray{<:Real,3},

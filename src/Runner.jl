@@ -476,30 +476,30 @@ end
 
 
 """
-    (runner::NEXUSShear)(tracelessShearField, thetaField; multithread = false)
+    (runner::NEXUSShear)(tracelessShearField, divField; multithread = false)
 
 Execute the NEXUS_shear pipeline on a traceless shear field together with a
-separate divergence field `thetaField`.
+separate divergence field `divField`.
 """
 function (runner::NEXUSShear)(
     tracelessShearField::AbstractArray{<:Real,5},
-    thetaField::AbstractArray{<:Real,3},
+    divField::AbstractArray{<:Real,3},
     ;
     multithread::Bool=false
 )
     if multithread
-        return runMultithreaded(runner, tracelessShearField, thetaField)
+        return runMultithreaded(runner, tracelessShearField, divField)
     else
-        return run(runner, tracelessShearField, thetaField)
+        return run(runner, tracelessShearField, divField)
     end
 end
 
 function (runner::NEXUSShear)(
     tracelessShearField::AbstractArray{<:Real,5},
-    thetaField::AbstractArray{<:Real,3},
+    divField::AbstractArray{<:Real,3},
     multithread::Bool
 )
-    return runner(tracelessShearField, thetaField; multithread=multithread)
+    return runner(tracelessShearField, divField; multithread=multithread)
 end
 
 
@@ -509,10 +509,10 @@ end
 Execute the NEXUS_shear pipeline on a full symmetric velocity-shear tensor field
 stored as `(Nx, Ny, Nz, 3, 3)`.
 
-Thresholding uses `-tr(shearField)` as the collapse proxy, matching the `-theta`
+Thresholding uses `-tr(shearField)` as the collapse proxy, matching the `-divField`
 proxy used by [`NEXUSDiv`](@ref).
 
-Use [`run(runner::NEXUSShear, tracelessShearField, thetaField)`](@ref) when the
+Use [`run(runner::NEXUSShear, tracelessShearField, divField)`](@ref) when the
 available shear field is traceless.
 
 Returns `(nodeThres, filamentThres, wallThres)`.
@@ -523,18 +523,18 @@ end
 
 
 """
-    run(runner::NEXUSShear, tracelessShearField, thetaField) -> NamedTuple
+    run(runner::NEXUSShear, tracelessShearField, divField) -> NamedTuple
 
 Convenience overload that reconstructs the full symmetric velocity-shear tensor
-from a traceless shear field and a divergence field `thetaField`.
+from a traceless shear field and a divergence field `divField`.
 """
 function NeoNEXUS.run(
     runner::NEXUSShear,
     tracelessShearField::AbstractArray{<:Real,5},
-    thetaField::AbstractArray{<:Real,3}
+    divField::AbstractArray{<:Real,3}
 )
-    fullShear = _reconstructVelocityShearField(tracelessShearField, thetaField)
-    return _runNEXUSShear(runner, fullShear, .-thetaField)
+    fullShear = _reconstructVelocityShearField(tracelessShearField, divField)
+    return _runNEXUSShear(runner, fullShear, .-divField)
 end
 
 
@@ -557,15 +557,15 @@ end
 
 
 """
-    runMultithreaded(runner::NEXUSShear, tracelessShearField, thetaField) -> NamedTuple
+    runMultithreaded(runner::NEXUSShear, tracelessShearField, divField) -> NamedTuple
 
-Multithreaded convenience overload for traceless shear plus `thetaField`.
+Multithreaded convenience overload for traceless shear plus `divField`.
 """
 function NeoNEXUS.runMultithreaded(
     runner::NEXUSShear,
     tracelessShearField::AbstractArray{<:Real,5},
-    thetaField::AbstractArray{<:Real,3}
+    divField::AbstractArray{<:Real,3}
 )
-    fullShear = _reconstructVelocityShearField(tracelessShearField, thetaField)
-    return _runNEXUSShearMultithreaded(runner, fullShear, .-thetaField)
+    fullShear = _reconstructVelocityShearField(tracelessShearField, divField)
+    return _runNEXUSShearMultithreaded(runner, fullShear, .-divField)
 end

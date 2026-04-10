@@ -3,7 +3,7 @@
 
 Compute voxel-wise eigenvalues of a symmetric velocity-shear tensor field stored
 as a `(Nx, Ny, Nz, 3, 3)` array. Allocates and returns a new
-[`HessianEigenCache`](@ref).
+`HessianEigenCache`.
 
 The input is assumed to contain the full velocity-shear tensor. If the
 available field is traceless, reconstruct the trace contribution first or use

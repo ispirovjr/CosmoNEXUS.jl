@@ -1,7 +1,7 @@
 """
     CosmoNEXUS
 
-Cosmology-specific extensions for [`NeoNEXUS`](@ref).
+Cosmology-specific extensions for `NeoNEXUS`.
 
 Provides tidal-tensor ([`NEXUSTidal`](@ref)), velocity-divergence
 ([`NEXUSDiv`](@ref)), and velocity-shear ([`NEXUSShear`](@ref)) pipelines

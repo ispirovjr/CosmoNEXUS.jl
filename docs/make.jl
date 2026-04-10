@@ -1,5 +1,6 @@
 using Documenter
 using CosmoNEXUS
+using NeoNEXUS
 
 makedocs(;
     modules=[CosmoNEXUS],
