@@ -160,6 +160,15 @@ function NeoNEXUS.runMultithreaded(runner::NEXUSTidal, densityField::AbstractArr
 end
 
 
+function (runner::NEXUSTidal)(densityField::AbstractArray{<:Real,3}, multithread=false)
+    if multithread
+        return runMultithreaded(runner, densityField)
+    else
+        return run(runner, densityField)
+    end
+end
+
+
 """
     NEXUSDiv
 
@@ -309,4 +318,12 @@ function NeoNEXUS.runMultithreaded(runner::NEXUSDiv, θField::AbstractArray{<:Re
     wallThres = deltaMSquaredThreshold!(runner.wall, negθ)
 
     return (nodeThres=nodeThres, filamentThres=filamentThres, wallThres=wallThres)
+end
+
+function (runner::NEXUSDiv)(densityField::AbstractArray{<:Real,3}, multithread=false)
+    if multithread
+        return runMultithreaded(runner, densityField)
+    else
+        return run(runner, densityField)
+    end
 end

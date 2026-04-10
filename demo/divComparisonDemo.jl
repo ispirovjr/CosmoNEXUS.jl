@@ -15,39 +15,35 @@ using Plots
 using Statistics
 
 # ─── Load Data ────────────────────────────────────────────────
-dataDir = joinpath(@__DIR__, "..", "..", "examples", "data", "densitiesDTFE")
+dataDir = joinpath(@__DIR__)
 
 println("Loading density...")
-density = Float32.(jldopen(joinpath(dataDir, "density256.jld2"), "r") do f
-    read(f, "densityField")
-end)
+density = Float32.(load(joinpath(dataDir, "exampleDensity64.jld2"))["dens"])
+
 N = size(density, 1)
 println("  Density: $(size(density)), range [$(minimum(density)), $(maximum(density))]")
 
 println("Loading velocity divergence...")
-divField = Float32.(jldopen(joinpath(dataDir, "velocityDerivatives256.jld2"), "r") do f
-    read(f, "divergenceField")
-end)
+divField = Float32.(load(joinpath(dataDir, "exampleDivergence64.jld2"))["divs"])
 println("  Divergence: $(size(divField)), range [$(minimum(divField)), $(maximum(divField))]")
 
-# Normalize divergence by H0 (user divides manually; use H0=100 km/s/Mpc as placeholder)
-H0 = 100.0f0
+H0 = 70.4f0
 θField = divField ./ H0
 println("  θ = ∇·v/H0: range [$(minimum(θField)), $(maximum(θField))]")
 
-scales = [1.0, 3.0, 9.0]
+scales = [3.0, 6.0, 9.0]
 
 # ─── Run NEXUS+ ──────────────────────────────────────────────
 println("\n=== Running NEXUS+ (density) ===")
 nexusPlus = NEXUSPlus(N, scales)
-t1 = @elapsed thresPlus = NeoNEXUS.run(nexusPlus, density)
+t1 = @elapsed thresPlus = nexusPlus(density)
 println("  Time: $(round(t1, digits=2))s")
 println("  Thresholds: node=$(thresPlus.nodeThres), fil=$(thresPlus.filamentThres), wall=$(thresPlus.wallThres)")
 
 # ─── Run NEXUS_div ────────────────────────────────────────────
 println("\n=== Running NEXUS_div (velocity divergence) ===")
 nexusDiv = NEXUSDiv(N, scales)
-t2 = @elapsed thresDiv = run(nexusDiv, θField)
+t2 = @elapsed thresDiv = nexusDiv(θField)
 println("  Time: $(round(t2, digits=2))s")
 println("  Thresholds: node=$(thresDiv.nodeThres), fil=$(thresDiv.filamentThres), wall=$(thresDiv.wallThres)")
 

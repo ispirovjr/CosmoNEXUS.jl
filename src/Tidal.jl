@@ -1,7 +1,7 @@
 # Tidal tensor computation via Fourier-space Poisson inversion
 # T_ij(k) = -(k_i k_j / k²) ρ̂(k)
 
-# Local helper: extract k-vector component based on dimension (1=x, 2=y, 3=z).
+# Local helper: extract k-vector component based on dimension (1=x, 2=y, 3=z)
 @inline _selectK(kVec, i, j, k, dim) = dim == 1 ? kVec[i] : (dim == 2 ? kVec[j] : kVec[k])
 
 

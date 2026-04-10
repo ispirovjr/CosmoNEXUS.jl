@@ -10,24 +10,25 @@ Generates a 2×2 heatmap:
 
 using NeoNEXUS
 using CosmoNEXUS
-using HDF5
+using JLD2
 using Plots
 using Statistics
 
 # ─── Load Example Density ────────────────────────────────────
-densityFile = joinpath(@__DIR__, "..", "..", "demo", "exampleDensity.h5")
-density = Float32.(h5open(densityFile, "r") do f
-    read(f, "densityfield")
-end)
+dataDir = joinpath(@__DIR__)
+
+println("Loading density...")
+density = Float32.(load(joinpath(dataDir, "exampleDensity64.jld2"))["dens"])
+
 N = size(density, 1)
 println("Loaded density field: $(size(density))")
 
-scales = [1.0, 3.0, 9.0]
+scales = [3.0, 6.0, 9.0]
 
 # ─── Run NEXUS+ ──────────────────────────────────────────────
 println("\n=== Running NEXUS+ ===")
 nexusPlus = NEXUSPlus(N, scales)
-t1 = @elapsed thresPlus = NeoNEXUS.run(nexusPlus, density)
+t1 = @elapsed thresPlus = nexusPlus(density)
 println("  Time: $(round(t1, digits=2))s")
 println("  Node threshold:     $(thresPlus.nodeThres)")
 println("  Filament threshold: $(thresPlus.filamentThres)")
@@ -36,7 +37,7 @@ println("  Wall threshold:     $(thresPlus.wallThres)")
 # ─── Run NEXUS_tidal ─────────────────────────────────────────
 println("\n=== Running NEXUS_tidal ===")
 nexusTidal = NEXUSTidal(N, scales)
-t2 = @elapsed thresTidal = run(nexusTidal, density)
+t2 = @elapsed thresTidal = nexusTidal(density)
 println("  Time: $(round(t2, digits=2))s")
 println("  Node threshold:     $(thresTidal.nodeThres)")
 println("  Filament threshold: $(thresTidal.filamentThres)")
