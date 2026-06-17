@@ -1,8 +1,8 @@
 # CosmoNEXUS.jl
 
 **CosmoNEXUS** extends [**NeoNEXUS**](https://ispirovjr.github.io/NeoNEXUS.jl/) with cosmology-specific pipelines for tidal
-tensors, velocity divergence, and velocity shear while keeping the same
-multi-scale morphology workflow.
+tensors, potential fields, velocity divergence, and velocity shear while
+keeping the same multi-scale morphology workflow.
 
 ## Installation
 
@@ -30,13 +30,16 @@ println(sum(runner.wall.thresholdMap))
 ## What the Package Provides
 
 - **Tidal tensor tools**: [`computeTidalEigenvalues`](@ref) and [`computeTidalEigenvalues!`](@ref) evaluate the tidal-tensor eigenvalues of a scalar field.
+- **Potential tools**: [`computePotentialField`](@ref) and [`computePotentialField!`](@ref) build smooth potential fields.
 - **Shear tensor tools**: [`computeShearEigenvalues`](@ref) and [`computeShearEigenvalues!`](@ref) evaluate the eigenvalues of a symmetric velocity-shear tensor field.
-- **Runners**: [`NEXUSTidal`](@ref), [`NEXUSDiv`](@ref), and [`NEXUSShear`](@ref) reuse the `NeoNEXUS` feature, filter, and thresholding stack for cosmological observables.
+- **Runners**: [`NEXUSTidal`](@ref), [`NEXUSPotential`](@ref), [`NEXUSVoid`](@ref), [`NEXUSDiv`](@ref), and [`NEXUSShear`](@ref) reuse the `NeoNEXUS` feature, filter, and thresholding stack for cosmological observables.
 
 ## Usage Notes
 
-- `NEXUSTidal(gridSize, scales)`, `NEXUSDiv(gridSize, scales)`, and `NEXUSShear(gridSize, scales)` are convenience constructors for cubic grids.
+- `NEXUSTidal(gridSize, scales)`, `NEXUSPotential(gridSize, scales)`, `NEXUSVoid(gridSize, scales)`, `NEXUSDiv(gridSize, scales)`, and `NEXUSShear(gridSize, scales)` are convenience constructors for cubic grids.
 - `NEXUSTidal` normalizes the input density field to mean density 1 internally, matching `NEXUSPlus`.
+- `NEXUSPotential` takes a potential field directly and filters it linearly at every scale.
+- `NEXUSVoid` takes a potential field directly and returns zero-wall-signature voxels as a void mask.
 - `NEXUSDiv` expects `thetaField = div(v) / H`.
 - `NEXUSShear` accepts either a full `(Nx, Ny, Nz, 3, 3)` velocity-shear tensor or a traceless shear field together with `thetaField`.
 - The bundled `exampleShear64.jld2` demo field is traceless, so it should be paired with `exampleDivergence64.jld2` and passed through the two-field `NEXUSShear` overload.

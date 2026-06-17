@@ -33,6 +33,15 @@ function makeFullShearField(X, Y, Z)
 end
 
 
+function makePotentialField(X, Y, Z)
+    nodePeak = exp.(-20f0 .* Float32.(X .^ 2 .+ Y .^ 2 .+ Z .^ 2))
+    filamentRidge = 0.6f0 .* exp.(-30f0 .* Float32.(X .^ 2 .+ Y .^ 2))
+    wallSheet = 0.4f0 .* exp.(-40f0 .* Float32.(X .^ 2))
+
+    return Float32.(nodePeak .+ filamentRidge .+ wallSheet)
+end
+
+
 function splitTracelessShear(fullShear)
     thetaField =
         fullShear[:, :, :, 1, 1] .+
@@ -86,6 +95,18 @@ end
         @test maximum(abs.(tidalCache.λ3)) > 0.01
     end
 
+    @testset "Potential - Poisson Field Matches Tidal Eigenvalues" begin
+        sourceField = Float32.(1 .+ 0.4 .* exp.(-20 .* (X .^ 2 .+ Y .^ 2 .+ Z .^ 2)))
+
+        potentialField = computePotentialField(sourceField, kx, ky, kz)
+        potentialCache = computeHessianEigenvalues(potentialField, kx, ky, kz)
+        tidalCache = computeTidalEigenvalues(sourceField, kx, ky, kz)
+
+        @test maximum(abs.(potentialCache.λ1 .- tidalCache.λ1)) < 1e-4
+        @test maximum(abs.(potentialCache.λ2 .- tidalCache.λ2)) < 1e-4
+        @test maximum(abs.(potentialCache.λ3 .- tidalCache.λ3)) < 1e-4
+    end
+
     @testset "Shear - Constant Tensor Field" begin
         shearField = zeros(Float32, N, N, N, 3, 3)
         shearField[:, :, :, 1, 1] .= -3f0
@@ -117,6 +138,45 @@ end
         @test size(node.thresholdMap) == (N, N, N)
         @test size(filament.thresholdMap) == (N, N, N)
         @test size(wall.thresholdMap) == (N, N, N)
+    end
+
+    @testset "NEXUSPotential Pipeline Orchestration" begin
+        filter = GaussianFourierFilter((N, N, N))
+        node = NodeFeature((N, N, N), kx, ky, kz)
+        filament = LineFeature((N, N, N), kx, ky, kz)
+        wall = SheetFeature((N, N, N), kx, ky, kz)
+        scales = [1.0, 2.0]
+        runner = NEXUSPotential(filter, node, filament, wall, scales)
+
+        potentialField = makePotentialField(X, Y, Z)
+        thresholds = CosmoNEXUS.run(runner, potentialField)
+
+        @test thresholds isa NamedTuple
+        @test any(node.significanceMap .> 0)
+        @test any(filament.significanceMap .> 0)
+        @test any(wall.significanceMap .> 0)
+        @test size(node.thresholdMap) == (N, N, N)
+        @test size(filament.thresholdMap) == (N, N, N)
+        @test size(wall.thresholdMap) == (N, N, N)
+    end
+
+    @testset "NEXUSVoid Pipeline Orchestration" begin
+        scales = [1.0, 2.0]
+        potentialField = makePotentialField(X, Y, Z)
+        runner = NEXUSVoid(N, scales)
+
+        voidMap = CosmoNEXUS.run(runner, potentialField)
+
+        @test any(runner.wall.significanceMap .> 0)
+        @test any(voidMap .> 0)
+        @test all((voidMap .> 0) .== (runner.wall.significanceMap .== 0f0))
+        @test all(runner.wall.thresholdMap .== 0f0)
+
+        potentialRunner = NEXUSPotential(N, scales)
+        compatibleVoidMap = NEXUSVoid(potentialRunner, potentialField)
+
+        @test all((compatibleVoidMap .> 0) .== (potentialRunner.wall.significanceMap .== 0f0))
+        @test all(potentialRunner.wall.thresholdMap .== 0f0)
     end
 
     @testset "NEXUSDiv Pipeline Orchestration" begin
@@ -196,5 +256,39 @@ end
         @test seqRunner.node.significanceMap ≈ mtRunner.node.significanceMap atol=1e-5 rtol=1e-5
         @test seqRunner.filament.significanceMap ≈ mtRunner.filament.significanceMap atol=1e-5 rtol=1e-5
         @test seqRunner.wall.significanceMap ≈ mtRunner.wall.significanceMap atol=1e-5 rtol=1e-5
+    end
+
+    @testset "NEXUSPotential Multithreaded Matches Sequential" begin
+        scales = [1.0, 2.0]
+        potentialField = makePotentialField(X, Y, Z)
+
+        seqRunner = NEXUSPotential(N, scales)
+        mtRunner = NEXUSPotential(N, scales)
+
+        seqThresholds = CosmoNEXUS.run(seqRunner, potentialField)
+        mtThresholds = CosmoNEXUS.runMultithreaded(mtRunner, potentialField)
+
+        @test seqThresholds.nodeThres ≈ mtThresholds.nodeThres atol=1e-5 rtol=1e-5
+        @test seqThresholds.filamentThres ≈ mtThresholds.filamentThres atol=1e-5 rtol=1e-5
+        @test seqThresholds.wallThres ≈ mtThresholds.wallThres atol=1e-5 rtol=1e-5
+
+        @test seqRunner.node.significanceMap ≈ mtRunner.node.significanceMap atol=1e-5 rtol=1e-5
+        @test seqRunner.filament.significanceMap ≈ mtRunner.filament.significanceMap atol=1e-5 rtol=1e-5
+        @test seqRunner.wall.significanceMap ≈ mtRunner.wall.significanceMap atol=1e-5 rtol=1e-5
+    end
+
+    @testset "NEXUSVoid Multithreaded Matches Sequential" begin
+        scales = [1.0, 2.0]
+        potentialField = makePotentialField(X, Y, Z)
+
+        seqRunner = NEXUSVoid(N, scales)
+        mtRunner = NEXUSVoid(N, scales)
+
+        seqVoidMap = CosmoNEXUS.run(seqRunner, potentialField)
+        mtVoidMap = CosmoNEXUS.runMultithreaded(mtRunner, potentialField)
+
+        @test seqVoidMap ≈ mtVoidMap atol=1e-5 rtol=1e-5
+        @test seqRunner.wall.significanceMap ≈ mtRunner.wall.significanceMap atol=1e-5 rtol=1e-5
+        @test all(mtRunner.wall.thresholdMap .== 0f0)
     end
 end

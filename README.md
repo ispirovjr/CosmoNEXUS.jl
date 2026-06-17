@@ -1,10 +1,10 @@
 # CosmoNEXUS
 
 **CosmoNEXUS** is a Julia package that extends **NeoNEXUS** with
-cosmology-specific pipelines for tidal tensors, velocity divergence, and
-velocity shear. It reuses the same multi-scale morphology framework, feature
-definitions, filters, and thresholding utilities while adapting the field
-construction to cosmological observables.
+cosmology-specific pipelines for tidal tensors, potential fields, velocity
+divergence, and velocity shear. It reuses the same multi-scale morphology
+framework, feature definitions, filters, and thresholding utilities while
+adapting the field construction to cosmological observables.
 
 ## Installation
 
@@ -32,15 +32,21 @@ println(sum(runner.wall.thresholdMap))
 ## Main Components
 
 - `NEXUSTidal` runs the NEXUS_tidal workflow on a density field by replacing the density Hessian with the tidal tensor.
+- `NEXUSPotential` runs NeoNEXUS-style Hessian signatures directly on a potential field for the smoothest large-scale features.
+- `NEXUSVoid` runs a wall-signature-only potential workflow and returns zero-wall-signature voxels as a void mask.
 - `NEXUSDiv` runs the NEXUS_div workflow on `thetaField = div(v) / H`.
 - `NEXUSShear` runs the NEXUS_shear workflow on either a full velocity-shear tensor or a traceless shear field together with a divergence field.
 - `computeTidalEigenvalues` and `computeTidalEigenvalues!` provide low-level tidal-tensor eigenvalue access.
+- `computePotentialField` and `computePotentialField!` build a Poisson potential from a scalar source field.
 - `computeShearEigenvalues` and `computeShearEigenvalues!` provide low-level symmetric shear-tensor eigenvalue access.
 
 ## Important Notes
 
 - The convenience constructors are for cubic grids.
 - `NEXUSTidal` normalizes the input density field to mean density 1 internally.
+- `NEXUSPotential` takes a potential field directly and uses linear Gaussian filtering for all features.
+- `NEXUSVoid` also takes a potential field directly and leaves threshold maps untouched.
+- `computePotentialField` sets the zero Fourier mode to zero.
 - `NEXUSDiv` and `NEXUSShear` use a collapse proxy for thresholding, so the sign and normalization convention of `thetaField` matter.
 - `NEXUSShear` expects the full tensor when called as `runner(shearField)`. If the available field is traceless, call `runner(tracelessShearField, divergenceField)` instead.
 - The bundled `demo/exampleShear64.jld2` file is traceless and is paired with `demo/exampleDivergence64.jld2` in `demo/shearComparisonDemo.jl`.

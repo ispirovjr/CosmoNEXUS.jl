@@ -176,6 +176,276 @@ function NeoNEXUS.runMultithreaded(runner::NEXUSTidal, densityField::AbstractArr
 end
 
 
+"""
+    NEXUSPotential
+
+NEXUS potential pipeline for smooth potential-field classification.
+
+Uses the Hessian of an input potential field directly. All features use linear
+Gaussian filtering.
+
+# Fields
+- `filter::AbstractScaleFilter` - scale-space filter
+- `node::NodeFeature` - node detector
+- `filament::LineFeature` - filament detector
+- `wall::SheetFeature` - wall detector
+- `scales::Vector{Float64}` - smoothing scales
+"""
+struct NEXUSPotential
+    filter::AbstractScaleFilter
+    node::NodeFeature
+    filament::LineFeature
+    wall::SheetFeature
+    scales::Vector{Float64}
+end
+
+
+"""
+    NEXUSPotential(gridSize::Int, scales)
+
+Convenience constructor for a cubic grid of side `gridSize`.
+"""
+function NEXUSPotential(gridSize::Int, scales::Vector{Float64})
+    kx = FFTW.rfftfreq(gridSize) .* gridSize .* 2π
+    ky = kz = FFTW.fftfreq(gridSize) .* gridSize .* 2π
+    sheet = SheetFeature((gridSize, gridSize, gridSize), kx, ky, kz)
+    line = LineFeature((gridSize, gridSize, gridSize), kx, ky, kz)
+    node = NodeFeature((gridSize, gridSize, gridSize), kx, ky, kz)
+
+    return NEXUSPotential(GaussianFourierFilter((gridSize, gridSize, gridSize)), node, line, sheet, scales)
+end
+
+
+"""
+    (runner::NEXUSPotential)(potentialField; multithread = false)
+
+Execute the NEXUS_potential pipeline.
+Depending on `multithread`, dispatches to [`run`](@ref) or
+[`runMultithreaded`](@ref).
+"""
+function (runner::NEXUSPotential)(potentialField::AbstractArray{<:Real,3}; multithread::Bool=false)
+    if multithread
+        return runMultithreaded(runner, potentialField)
+    else
+        return run(runner, potentialField)
+    end
+end
+
+function (runner::NEXUSPotential)(potentialField::AbstractArray{<:Real,3}, multithread::Bool)
+    return runner(potentialField; multithread=multithread)
+end
+
+
+"""
+    run(runner::NEXUSPotential, potentialField) -> NamedTuple
+
+Execute the NEXUS_potential pipeline on a potential field.
+
+Returns `(nodeThres, filamentThres, wallThres)`.
+"""
+function NeoNEXUS.run(runner::NEXUSPotential, potentialField::AbstractArray{<:Real,3})
+    gridSize = size(runner.node.significanceMap)
+    cache = HessianEigenCache(gridSize...)
+
+    for scale in runner.scales
+        R2 = scale^2
+
+        filtered = runner.filter(potentialField, scale) .* R2
+        runner.node(filtered, cache, Write)
+        runner.filament(filtered, cache, Read)
+        runner.wall(filtered, cache, Read)
+    end
+
+    nodeThres = componentErosionPlateauThreshold!(runner.node)
+
+    maskSignatureMap!(runner.filament, runner.node)
+    filamentThres = componentErosionPlateauThreshold!(runner.filament)
+
+    maskSignatureMap!(runner.wall, runner.node)
+    maskSignatureMap!(runner.wall, runner.filament)
+    wallThres = componentErosionPlateauThreshold!(runner.wall)
+
+    return (nodeThres=nodeThres, filamentThres=filamentThres, wallThres=wallThres)
+end
+
+
+"""
+    runMultithreaded(runner::NEXUSPotential, potentialField) -> NamedTuple
+
+Multithreaded variant of [`run`](@ref) for [`NEXUSPotential`](@ref).
+
+Parallelizes the scale loop using `Threads.@threads`; each scale gets its own
+cache and signature arrays. Thresholding is identical to the sequential version.
+
+!!! note
+    Requires `julia --threads=N`. FFTW internal threading is disabled
+    automatically for thread safety.
+"""
+function NeoNEXUS.runMultithreaded(runner::NEXUSPotential, potentialField::AbstractArray{<:Real,3})
+    FFTW.set_num_threads(1)
+
+    gridSize = size(runner.node.significanceMap)
+    nScales = length(runner.scales)
+
+    nodeSigs = [zeros(Float32, gridSize) for _ in 1:nScales]
+    filaSigs = [zeros(Float32, gridSize) for _ in 1:nScales]
+    wallSigs = [zeros(Float32, gridSize) for _ in 1:nScales]
+
+    Threads.@threads for idx in 1:nScales
+        scale = runner.scales[idx]
+        R2 = scale^2
+
+        filtered = runner.filter(potentialField, scale) .* R2
+        localCache = computeHessianEigenvalues(filtered, runner.node.kx, runner.node.ky, runner.node.kz)
+
+        nodeSigs[idx] .= NeoNEXUS.computeSignature(runner.node, localCache)
+        filaSigs[idx] .= NeoNEXUS.computeSignature(runner.filament, localCache)
+        wallSigs[idx] .= NeoNEXUS.computeSignature(runner.wall, localCache)
+    end
+
+    for idx in 1:nScales
+        @. runner.node.significanceMap = max(runner.node.significanceMap, nodeSigs[idx])
+        @. runner.filament.significanceMap = max(runner.filament.significanceMap, filaSigs[idx])
+        @. runner.wall.significanceMap = max(runner.wall.significanceMap, wallSigs[idx])
+    end
+
+    nodeThres = componentErosionPlateauThreshold!(runner.node)
+
+    maskSignatureMap!(runner.filament, runner.node)
+    filamentThres = componentErosionPlateauThreshold!(runner.filament)
+
+    maskSignatureMap!(runner.wall, runner.node)
+    maskSignatureMap!(runner.wall, runner.filament)
+    wallThres = componentErosionPlateauThreshold!(runner.wall)
+
+    return (nodeThres=nodeThres, filamentThres=filamentThres, wallThres=wallThres)
+end
+
+
+"""
+    NEXUSVoid
+
+NEXUS_void pipeline for potential-field void inference.
+
+Computes only the wall signature of a potential field with linear Gaussian
+filtering. Voxels with zero wall signature are marked as voids in
+a returned mask.
+
+# Fields
+- `filter::AbstractScaleFilter` - scale-space filter
+- `wall::SheetFeature` - wall detector used as the void complement
+- `scales::Vector{Float64}` - smoothing scales
+"""
+struct NEXUSVoid
+    filter::AbstractScaleFilter
+    wall::SheetFeature
+    scales::Vector{Float64}
+end
+
+
+"""
+    NEXUSVoid(gridSize::Int, scales)
+
+Convenience constructor for a cubic grid of side `gridSize`.
+"""
+function NEXUSVoid(gridSize::Int, scales::Vector{Float64})
+    kx = FFTW.rfftfreq(gridSize) .* gridSize .* 2π
+    ky = kz = FFTW.fftfreq(gridSize) .* gridSize .* 2π
+    wall = SheetFeature((gridSize, gridSize, gridSize), kx, ky, kz)
+
+    return NEXUSVoid(GaussianFourierFilter((gridSize, gridSize, gridSize)), wall, scales)
+end
+
+"""
+    NEXUSVoid(runner::NEXUSPotential)
+
+Build a void runner from a compatible [`NEXUSPotential`](@ref) runner.
+"""
+function NEXUSVoid(runner::NEXUSPotential)
+    return NEXUSVoid(runner.filter, runner.wall, runner.scales)
+end
+
+"""
+    NEXUSVoid(runner::NEXUSPotential, potentialField; multithread = false)
+
+Run void inference using a compatible [`NEXUSPotential`](@ref) runner.
+"""
+function NEXUSVoid(
+    runner::NEXUSPotential,
+    potentialField::AbstractArray{<:Real,3};
+    multithread::Bool=false
+)
+    return NEXUSVoid(runner)(potentialField; multithread=multithread)
+end
+
+
+"""
+    (runner::NEXUSVoid)(potentialField; multithread = false)
+
+Execute the NEXUS_void pipeline.
+Depending on `multithread`, dispatches to [`run`](@ref) or
+[`runMultithreaded`](@ref).
+"""
+function (runner::NEXUSVoid)(potentialField::AbstractArray{<:Real,3}; multithread::Bool=false)
+    if multithread
+        return runMultithreaded(runner, potentialField)
+    else
+        return run(runner, potentialField)
+    end
+end
+
+function (runner::NEXUSVoid)(potentialField::AbstractArray{<:Real,3}, multithread::Bool)
+    return runner(potentialField; multithread=multithread)
+end
+
+
+"""
+    run(runner::NEXUSVoid, potentialField) -> Array{Float32,3}
+
+Execute the NEXUS_void pipeline on a potential field.
+
+Returns a void mask where zero-wall-signature voxels are marked as `1`.
+"""
+function NeoNEXUS.run(runner::NEXUSVoid, potentialField::AbstractArray{<:Real,3})
+    for scale in runner.scales
+        R2 = scale^2
+
+        filtered = runner.filter(potentialField, scale) .* R2
+        runner.wall(filtered, nothing, None)
+    end
+
+    return ifelse.(runner.wall.significanceMap .== 0f0, 1f0, 0f0)
+end
+
+
+"""
+    runMultithreaded(runner::NEXUSVoid, potentialField) -> Array{Float32,3}
+
+Multithreaded variant of [`run`](@ref) for [`NEXUSVoid`](@ref).
+"""
+function NeoNEXUS.runMultithreaded(runner::NEXUSVoid, potentialField::AbstractArray{<:Real,3})
+    FFTW.set_num_threads(1)
+
+    nScales = length(runner.scales)
+    wallSigs = Vector{Array{Float32,3}}(undef, nScales)
+
+    Threads.@threads for idx in 1:nScales
+        scale = runner.scales[idx]
+        R2 = scale^2
+
+        filtered = runner.filter(potentialField, scale) .* R2
+        eigenvalues = computeHessianEigenvalues(filtered, runner.wall.kx, runner.wall.ky, runner.wall.kz)
+        wallSigs[idx] = NeoNEXUS.computeSignature(runner.wall, eigenvalues)
+    end
+
+    for idx in 1:nScales
+        @. runner.wall.significanceMap = max(runner.wall.significanceMap, wallSigs[idx])
+    end
+
+    return ifelse.(runner.wall.significanceMap .== 0f0, 1f0, 0f0)
+end
+
+
 
 
 """
