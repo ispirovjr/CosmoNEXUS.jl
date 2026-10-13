@@ -41,34 +41,35 @@ end
 
 
 """
-    (runner::NEXUSTidal)(densityField; multithread = false)
+    (runner::NEXUSTidal)(densityField; multithread=false, periodicBounds=false)
 
 Execute the NEXUS_tidal pipeline.
 Depending on `multithread`, dispatches to [`run`](@ref) or
 [`runMultithreaded`](@ref).
+Set `periodicBounds=true` to join node components across opposite grid faces.
 """
-function (runner::NEXUSTidal)(densityField::AbstractArray{<:Real,3}; multithread::Bool=false)
+function (runner::NEXUSTidal)(densityField::AbstractArray{<:Real,3}; multithread::Bool=false, periodicBounds::Bool=false)
     if multithread
-        return runMultithreaded(runner, densityField)
+        return runMultithreaded(runner, densityField; periodicBounds=periodicBounds)
     else
-        return run(runner, densityField)
+        return run(runner, densityField; periodicBounds=periodicBounds)
     end
 end
 
-function (runner::NEXUSTidal)(densityField::AbstractArray{<:Real,3}, multithread::Bool)
-    return runner(densityField; multithread=multithread)
+function (runner::NEXUSTidal)(densityField::AbstractArray{<:Real,3}, multithread::Bool; periodicBounds::Bool=false)
+    return runner(densityField; multithread=multithread, periodicBounds=periodicBounds)
 end
 
 
 """
-    run(runner::NEXUSTidal, densityField) -> NamedTuple
+    run(runner::NEXUSTidal, densityField; periodicBounds=false) -> NamedTuple
 
 Execute the NEXUS_tidal pipeline. Identical to NEXUS+ but computes eigenvalues
 of the tidal tensor rather than the density Hessian.
 
 Returns `(nodeThres, filamentThres, wallThres)`.
 """
-function NeoNEXUS.run(runner::NEXUSTidal, densityField::AbstractArray{<:Real,3})
+function NeoNEXUS.run(runner::NEXUSTidal, densityField::AbstractArray{<:Real,3}; periodicBounds::Bool=false)
     meanρ = Statistics.mean(densityField)
     normDensity = densityField ./ meanρ
 
@@ -98,7 +99,8 @@ function NeoNEXUS.run(runner::NEXUSTidal, densityField::AbstractArray{<:Real,3})
         normDensity,
         370.0,
         0.50;
-        excludeEmpty=false
+        excludeEmpty=false,
+        periodicBounds=periodicBounds
     )
 
     maskSignatureMap!(runner.filament, runner.node)
@@ -113,7 +115,7 @@ end
 
 
 """
-    runMultithreaded(runner::NEXUSTidal, densityField) -> NamedTuple
+    runMultithreaded(runner::NEXUSTidal, densityField; periodicBounds=false) -> NamedTuple
 
 Multithreaded variant of [`run`](@ref) for [`NEXUSTidal`](@ref).
 
@@ -124,7 +126,7 @@ cache and signature arrays. Thresholding is identical to the sequential version.
     Requires `julia --threads=N`. FFTW internal threading is disabled
     automatically for thread safety.
 """
-function NeoNEXUS.runMultithreaded(runner::NEXUSTidal, densityField::AbstractArray{<:Real,3})
+function NeoNEXUS.runMultithreaded(runner::NEXUSTidal, densityField::AbstractArray{<:Real,3}; periodicBounds::Bool=false)
     FFTW.set_num_threads(1)
 
     meanρ = Statistics.mean(densityField)
@@ -162,7 +164,8 @@ function NeoNEXUS.runMultithreaded(runner::NEXUSTidal, densityField::AbstractArr
         normDensity,
         370.0,
         0.50;
-        excludeEmpty=false
+        excludeEmpty=false,
+        periodicBounds=periodicBounds
     )
 
     maskSignatureMap!(runner.filament, runner.node)
@@ -217,33 +220,33 @@ end
 
 
 """
-    (runner::NEXUSPotential)(potentialField; multithread = false)
+    (runner::NEXUSPotential)(potentialField; multithread=false, periodicBounds=false)
 
 Execute the NEXUS_potential pipeline.
 Depending on `multithread`, dispatches to [`run`](@ref) or
 [`runMultithreaded`](@ref).
 """
-function (runner::NEXUSPotential)(potentialField::AbstractArray{<:Real,3}; multithread::Bool=false)
+function (runner::NEXUSPotential)(potentialField::AbstractArray{<:Real,3}; multithread::Bool=false, periodicBounds::Bool=false)
     if multithread
-        return runMultithreaded(runner, potentialField)
+        return runMultithreaded(runner, potentialField; periodicBounds=periodicBounds)
     else
-        return run(runner, potentialField)
+        return run(runner, potentialField; periodicBounds=periodicBounds)
     end
 end
 
-function (runner::NEXUSPotential)(potentialField::AbstractArray{<:Real,3}, multithread::Bool)
-    return runner(potentialField; multithread=multithread)
+function (runner::NEXUSPotential)(potentialField::AbstractArray{<:Real,3}, multithread::Bool; periodicBounds::Bool=false)
+    return runner(potentialField; multithread=multithread, periodicBounds=periodicBounds)
 end
 
 
 """
-    run(runner::NEXUSPotential, potentialField) -> NamedTuple
+    run(runner::NEXUSPotential, potentialField; periodicBounds=false) -> NamedTuple
 
 Execute the NEXUS_potential pipeline on a potential field.
 
 Returns `(nodeThres, filamentThres, wallThres)`.
 """
-function NeoNEXUS.run(runner::NEXUSPotential, potentialField::AbstractArray{<:Real,3})
+function NeoNEXUS.run(runner::NEXUSPotential, potentialField::AbstractArray{<:Real,3}; periodicBounds::Bool=false)
     gridSize = size(runner.node.significanceMap)
     cache = HessianEigenCache(gridSize...)
 
@@ -256,21 +259,21 @@ function NeoNEXUS.run(runner::NEXUSPotential, potentialField::AbstractArray{<:Re
         runner.wall(filtered, cache, Read)
     end
 
-    nodeThres = componentErosionPlateauThreshold!(runner.node)
+    nodeThres = componentErosionPlateauThreshold!(runner.node; periodicBounds=periodicBounds)
 
     maskSignatureMap!(runner.filament, runner.node)
-    filamentThres = componentErosionPlateauThreshold!(runner.filament)
+    filamentThres = componentErosionPlateauThreshold!(runner.filament; periodicBounds=periodicBounds)
 
     maskSignatureMap!(runner.wall, runner.node)
     maskSignatureMap!(runner.wall, runner.filament)
-    wallThres = componentErosionPlateauThreshold!(runner.wall)
+    wallThres = componentErosionPlateauThreshold!(runner.wall; periodicBounds=periodicBounds)
 
     return (nodeThres=nodeThres, filamentThres=filamentThres, wallThres=wallThres)
 end
 
 
 """
-    runMultithreaded(runner::NEXUSPotential, potentialField) -> NamedTuple
+    runMultithreaded(runner::NEXUSPotential, potentialField; periodicBounds=false) -> NamedTuple
 
 Multithreaded variant of [`run`](@ref) for [`NEXUSPotential`](@ref).
 
@@ -281,7 +284,7 @@ cache and signature arrays. Thresholding is identical to the sequential version.
     Requires `julia --threads=N`. FFTW internal threading is disabled
     automatically for thread safety.
 """
-function NeoNEXUS.runMultithreaded(runner::NEXUSPotential, potentialField::AbstractArray{<:Real,3})
+function NeoNEXUS.runMultithreaded(runner::NEXUSPotential, potentialField::AbstractArray{<:Real,3}; periodicBounds::Bool=false)
     FFTW.set_num_threads(1)
 
     gridSize = size(runner.node.significanceMap)
@@ -309,14 +312,14 @@ function NeoNEXUS.runMultithreaded(runner::NEXUSPotential, potentialField::Abstr
         @. runner.wall.significanceMap = max(runner.wall.significanceMap, wallSigs[idx])
     end
 
-    nodeThres = componentErosionPlateauThreshold!(runner.node)
+    nodeThres = componentErosionPlateauThreshold!(runner.node; periodicBounds=periodicBounds)
 
     maskSignatureMap!(runner.filament, runner.node)
-    filamentThres = componentErosionPlateauThreshold!(runner.filament)
+    filamentThres = componentErosionPlateauThreshold!(runner.filament; periodicBounds=periodicBounds)
 
     maskSignatureMap!(runner.wall, runner.node)
     maskSignatureMap!(runner.wall, runner.filament)
-    wallThres = componentErosionPlateauThreshold!(runner.wall)
+    wallThres = componentErosionPlateauThreshold!(runner.wall; periodicBounds=periodicBounds)
 
     return (nodeThres=nodeThres, filamentThres=filamentThres, wallThres=wallThres)
 end

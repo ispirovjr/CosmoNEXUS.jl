@@ -4,6 +4,8 @@ using Statistics
 using NeoNEXUS
 using CosmoNEXUS
 
+include("testPeriodicComponents.jl")
+
 function centeredGrid(N, L=1.0)
     dx = L / N
     return range(-L / 2 + dx / 2, L / 2 - dx / 2; length=N)

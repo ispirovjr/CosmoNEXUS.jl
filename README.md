@@ -46,6 +46,9 @@ println(sum(runner.wall.thresholdMap))
 - `NEXUSTidal` normalizes the input density field to mean density 1 internally.
 - `NEXUSPotential` takes a potential field directly and uses linear Gaussian filtering for all features.
 - `NEXUSVoid` also takes a potential field directly and leaves threshold maps untouched.
+- `NEXUSTidal` and `NEXUSPotential` accept `periodicBounds=true` to join components
+  across opposite grid faces during thresholding, in both execution modes:
+  `runner(field; periodicBounds=true, multithread=true)`. The default is `false`.
 - `computePotentialField` sets the zero Fourier mode to zero.
 - `NEXUSDiv` and `NEXUSShear` use a collapse proxy for thresholding, so the sign and normalization convention of `thetaField` matter.
 - `NEXUSShear` expects the full tensor when called as `runner(shearField)`. If the available field is traceless, call `runner(tracelessShearField, divergenceField)` instead.
